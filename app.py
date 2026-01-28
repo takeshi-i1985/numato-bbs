@@ -6,9 +6,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = "bbs_secret_key_change_me"
 
-# Renderでも安全な保存先
+# Renderでも書き込み可能な場所
 DB_NAME = "/tmp/bbs.db"
 print("DB FILE PATH:", os.path.abspath(DB_NAME))
+
 
 # ================= DB接続 =================
 def get_db():
@@ -16,12 +17,12 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+
 # ================= DB初期化 =================
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
-    # ユーザー
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +33,6 @@ def init_db():
     )
     """)
 
-    # 投稿
     cur.execute("""
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,8 +56,9 @@ def init_db():
     conn.commit()
     conn.close()
 
-# 起動時必ず実行（Render対応）
+
 init_db()
+
 
 # ================= ログイン判定 =================
 def logged_in():
@@ -66,16 +67,27 @@ def logged_in():
 def is_admin():
     return session.get("is_admin") == 1
 
-# ================= サイト全体ログイン必須 =================
+
+# ================= 全ページログイン制御 =================
 @app.before_request
 def require_login():
-    allowed_endpoints = {"login", "static"}  # registerも封鎖
-
     if request.endpoint is None:
         return
 
-    if request.endpoint not in allowed_endpoints and "user_id" not in session:
+    # 常に許可
+    if request.endpoint in {"login", "static"}:
+        return
+
+    # registerは管理者のみ
+    if request.endpoint == "register":
+        if logged_in() and is_admin():
+            return
         return redirect(url_for("login"))
+
+    # それ以外はログイン必須
+    if not logged_in():
+        return redirect(url_for("login"))
+
 
 # ================= トップ（掲示板） =================
 @app.route("/", methods=["GET", "POST"])
@@ -94,6 +106,7 @@ def index():
             )
             conn.commit()
             conn.close()
+
         return redirect(url_for("index"))
 
     mode = request.args.get("mode")
@@ -130,6 +143,7 @@ def index():
 
     return render_template("index.html", messages=messages, mode=mode)
 
+
 # ================= ログイン =================
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -153,11 +167,50 @@ def login():
 
     return render_template("login.html")
 
+
 # ================= ログアウト =================
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+# ================= 管理者専用：新規登録 =================
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if not is_admin():
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        pw = request.form.get("password", "").strip()
+
+        if not username:
+            flash("ユーザー名を入力してください")
+            return render_template("register.html")
+
+        if not (pw.isdigit() and len(pw) == 4):
+            flash("パスワードは4桁の数字で入力してください")
+            return render_template("register.html")
+
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, generate_password_hash(pw))
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.IntegrityError:
+            flash("そのユーザー名はすでに登録されています")
+            return render_template("register.html")
+
+        flash("登録しました")
+        return redirect(url_for("admin"))
+
+    return render_template("register.html")
+
 
 # ================= 管理画面 =================
 @app.route("/admin")
@@ -181,6 +234,7 @@ def admin():
 
     conn.close()
     return render_template("admin.html", users=users, messages=messages)
+
 
 # ================= ローカル起動用 =================
 if __name__ == "__main__":
