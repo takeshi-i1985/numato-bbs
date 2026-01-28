@@ -6,27 +6,62 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = "bbs_secret_key_change_me"
 
-# ===== DB =====
+DB_NAME = "bbs.db"
+
+# ================= DB接続 =================
 def get_db():
-    conn = sqlite3.connect("bbs.db")
+    conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
+# ================= DB初期化（Render対策） =================
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0,
+        created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        body TEXT,
+        posted TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ip TEXT,
+        club TEXT
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+# ================= ログイン判定 =================
 def logged_in():
     return "user_id" in session
 
 def is_admin():
     return session.get("is_admin") == 1
 
-# ===== トップ（掲示板）=====
+# ================= 全ページログイン必須 =================
+@app.before_request
+def require_login():
+    allowed = ["login", "register", "static"]
+    if request.endpoint not in allowed and "user_id" not in session:
+        return redirect(url_for("login"))
+
+# ================= 掲示板トップ =================
 @app.route("/", methods=["GET", "POST"])
 def index():
 
-    # ---- 投稿処理 ----
     if request.method == "POST":
-        if not logged_in():
-            return redirect(url_for("login"))
-
         body = request.form.get("body", "").strip()
         club = request.form.get("club")
         ip = request.remote_addr
@@ -43,14 +78,12 @@ def index():
 
         return redirect(url_for("index"))
 
-    # ---- 表示モード取得 ----
-    mode = request.args.get("mode")          # list か None
-    club_filter = request.args.get("club")  # 特定部活フィルタ
+    mode = request.args.get("mode")
+    club_filter = request.args.get("club")
 
     conn = get_db()
     cur = conn.cursor()
 
-    # ---- SQL分岐 ----
     if mode == "list":
         if club_filter:
             cur.execute("""
@@ -85,7 +118,7 @@ def index():
 
     return render_template("index.html", messages=messages, mode=mode, club_filter=club_filter)
 
-# ===== 登録 =====
+# ================= 登録 =================
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
@@ -118,7 +151,7 @@ def register():
 
     return render_template("register.html")
 
-# ===== ログイン =====
+# ================= ログイン =================
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -141,13 +174,13 @@ def login():
 
     return render_template("login.html")
 
-# ===== ログアウト =====
+# ================= ログアウト =================
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
-# ===== 管理画面 =====
+# ================= 管理画面 =================
 @app.route("/admin")
 def admin():
     if not is_admin():
@@ -171,7 +204,9 @@ def admin():
     conn.close()
     return render_template("admin.html", users=users, messages=messages)
 
-# ===== 起動 =====
-if __name__ == "__main__":
-    app.run()
+# ================= 起動 =================
+init_db()
 
+if __name__ == "__main__":
+    print("DB PATH:", os.path.abspath(DB_NAME))
+    app.run()
