@@ -3,6 +3,8 @@ import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 
+print("DB FILE PATH:", os.path.abspath(DB_NAME))
+
 app = Flask(__name__)
 app.secret_key = "bbs_secret_key_change_me"
 
@@ -210,3 +212,4 @@ init_db()
 if __name__ == "__main__":
     print("DB PATH:", os.path.abspath(DB_NAME))
     app.run()
+
