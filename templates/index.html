@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>沼東部活動連絡掲示板</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+
+<body>
+<div class="container">
+
+  <header class="header">
+    <div class="brand">
+      <div class="logo"></div>
+      <div>
+        <h1>沼東部活動連絡掲示板</h1>
+        <small>部活動連絡システム</small>
+      </div>
+    </div>
+
+    <div class="nav">
+      {% if session.get("username") %}
+        <span class="badge">ログイン中：<strong>{{ session["username"] }}</strong></span>
+
+        {% if session.get("is_admin") == 1 %}
+          <a class="btn" href="/admin">管理画面</a>
+        {% endif %}
+
+        <a class="btn link" href="/logout">ログアウト</a>
+      {% else %}
+        <a class="btn" href="/login">ログイン</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- 投稿フォーム -->
+    <section class="card">
+      <h2>投稿する</h2>
+
+      {% if session.get("username") %}
+        <form action="/" method="post">
+          <div class="field">
+            <label>部活動</label>
+            <select name="club" required>
+              <option>サッカー部</option>
+              <option>野球部</option>
+              <option>バスケ部</option>
+              <option>吹奏楽部</option>
+              <option>その他</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>内容</label>
+            <textarea name="body" required></textarea>
+          </div>
+
+          <button class="btn primary">投稿する</button>
+        </form>
+      {% else %}
+        <p class="muted">ログインすると投稿できます。</p>
+      {% endif %}
+    </section>
+
+    <!-- 表示切り替え＆フィルタ -->
+    <section class="card">
+      <h2>表示設定</h2>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a href="/" class="btn">部活別表示</a>
+        <a href="/?mode=list" class="btn">全体一覧</a>
+        <a href="/?club=サッカー部" class="btn">サッカー部</a>
+        <a href="/?club=野球部" class="btn">野球部</a>
+        <a href="/?club=バスケ部" class="btn">バスケ部</a>
+        <a href="/?club=吹奏楽部" class="btn">吹奏楽部</a>
+      </div>
+    </section>
+
+    <!-- 投稿表示 -->
+    <section class="card">
+      <h2>投稿一覧</h2>
+
+      {% if messages %}
+        {% if mode == "list" %}
+          {% for msg in messages %}
+            <div class="post">
+              <div class="username">{{ msg['name'] }}（{{ msg['club'] }}）</div>
+              <div class="time">{{ msg['posted_jst'] }}</div>
+              <div class="body">{{ msg['body'] }}</div>
+            </div>
+          {% endfor %}
+        {% else %}
+          {% set current_club = None %}
+          {% for msg in messages %}
+            {% if current_club != msg['club'] %}
+              {% set current_club = msg['club'] %}
+              <h3 style="margin-top:20px;">■ {{ current_club }}</h3>
+            {% endif %}
+            <div class="post">
+              <div class="username">{{ msg['name'] }}</div>
+              <div class="time">{{ msg['posted_jst'] }}</div>
+              <div class="body">{{ msg['body'] }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% else %}
+        <p class="muted">投稿がありません。</p>
+      {% endif %}
+    </section>
+
+  </div>
+
+</div>
+</body>
+</html>
