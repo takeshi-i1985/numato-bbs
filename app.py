@@ -6,7 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = "bbs_secret_key_change_me"
 
-# Renderでも書き込み可能な場所
+# Renderでも安全な保存先
 DB_NAME = "/tmp/bbs.db"
 print("DB FILE PATH:", os.path.abspath(DB_NAME))
 
@@ -21,7 +21,7 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
-    # ユーザーテーブル
+    # ユーザー
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +32,7 @@ def init_db():
     )
     """)
 
-    # 投稿テーブル
+    # 投稿
     cur.execute("""
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +44,7 @@ def init_db():
     )
     """)
 
-    # 管理者自動作成
+    # 管理者アカウント自動作成
     cur.execute("SELECT * FROM users WHERE username = 'teacher'")
     if not cur.fetchone():
         cur.execute(
@@ -56,26 +56,28 @@ def init_db():
     conn.commit()
     conn.close()
 
-# 起動時実行（Renderでも必ず動く）
+# 起動時必ず実行（Render対応）
 init_db()
 
-# ================= ログイン関連 =================
+# ================= ログイン判定 =================
 def logged_in():
     return "user_id" in session
 
 def is_admin():
     return session.get("is_admin") == 1
 
-# 全ページログイン必須
+# ================= サイト全体ログイン必須 =================
 @app.before_request
 def require_login():
-    allowed = ["login", "register", "static"]
+    allowed_endpoints = {"login", "static"}  # registerも封鎖
+
     if request.endpoint is None:
         return
-    if request.endpoint not in allowed and "user_id" not in session:
+
+    if request.endpoint not in allowed_endpoints and "user_id" not in session:
         return redirect(url_for("login"))
 
-# ================= 掲示板トップ =================
+# ================= トップ（掲示板） =================
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
@@ -127,39 +129,6 @@ def index():
     conn.close()
 
     return render_template("index.html", messages=messages, mode=mode)
-
-# ================= 登録 =================
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        pw = request.form.get("hrno", "").strip()
-
-        if not username:
-            flash("ユーザー名を入力してください")
-            return render_template("register.html")
-
-        if not (pw.isdigit() and len(pw) == 4):
-            flash("パスワードは4桁の数字で入力してください")
-            return render_template("register.html")
-
-        try:
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                (username, generate_password_hash(pw))
-            )
-            conn.commit()
-            conn.close()
-        except sqlite3.IntegrityError:
-            flash("そのユーザー名はすでに登録されています")
-            return render_template("register.html")
-
-        flash("登録できました。ログインしてください。")
-        return redirect(url_for("login"))
-
-    return render_template("register.html")
 
 # ================= ログイン =================
 @app.route("/login", methods=["GET", "POST"])
@@ -213,6 +182,6 @@ def admin():
     conn.close()
     return render_template("admin.html", users=users, messages=messages)
 
-# ================= ローカル起動 =================
+# ================= ローカル起動用 =================
 if __name__ == "__main__":
     app.run()
