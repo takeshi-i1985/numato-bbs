@@ -3,12 +3,12 @@ import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 
-print("DB FILE PATH:", os.path.abspath(DB_NAME))
-
 app = Flask(__name__)
 app.secret_key = "bbs_secret_key_change_me"
 
-DB_NAME = "bbs.db"
+# Renderでも書き込み可能な場所
+DB_NAME = "/tmp/bbs.db"
+print("DB FILE PATH:", os.path.abspath(DB_NAME))
 
 # ================= DB接続 =================
 def get_db():
@@ -16,11 +16,12 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# ================= DB初期化（Render対策） =================
+# ================= DB初期化 =================
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
+    # ユーザーテーブル
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,6 +32,7 @@ def init_db():
     )
     """)
 
+    # 投稿テーブル
     cur.execute("""
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,27 +44,40 @@ def init_db():
     )
     """)
 
+    # 管理者自動作成
+    cur.execute("SELECT * FROM users WHERE username = 'teacher'")
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
+            ("teacher", generate_password_hash("9999"))
+        )
+        print("Admin created: teacher / 9999")
+
     conn.commit()
     conn.close()
 
-# ================= ログイン判定 =================
+# 起動時実行（Renderでも必ず動く）
+init_db()
+
+# ================= ログイン関連 =================
 def logged_in():
     return "user_id" in session
 
 def is_admin():
     return session.get("is_admin") == 1
 
-# ================= 全ページログイン必須 =================
+# 全ページログイン必須
 @app.before_request
 def require_login():
     allowed = ["login", "register", "static"]
+    if request.endpoint is None:
+        return
     if request.endpoint not in allowed and "user_id" not in session:
         return redirect(url_for("login"))
 
 # ================= 掲示板トップ =================
 @app.route("/", methods=["GET", "POST"])
 def index():
-
     if request.method == "POST":
         body = request.form.get("body", "").strip()
         club = request.form.get("club")
@@ -77,7 +92,6 @@ def index():
             )
             conn.commit()
             conn.close()
-
         return redirect(url_for("index"))
 
     mode = request.args.get("mode")
@@ -90,35 +104,29 @@ def index():
         if club_filter:
             cur.execute("""
                 SELECT *, datetime(posted, '+9 hours') AS posted_jst
-                FROM messages
-                WHERE club = ?
-                ORDER BY id DESC
+                FROM messages WHERE club = ? ORDER BY id DESC
             """, (club_filter,))
         else:
             cur.execute("""
                 SELECT *, datetime(posted, '+9 hours') AS posted_jst
-                FROM messages
-                ORDER BY id DESC
+                FROM messages ORDER BY id DESC
             """)
     else:
         if club_filter:
             cur.execute("""
                 SELECT *, datetime(posted, '+9 hours') AS posted_jst
-                FROM messages
-                WHERE club = ?
-                ORDER BY id DESC
+                FROM messages WHERE club = ? ORDER BY id DESC
             """, (club_filter,))
         else:
             cur.execute("""
                 SELECT *, datetime(posted, '+9 hours') AS posted_jst
-                FROM messages
-                ORDER BY club, id DESC
+                FROM messages ORDER BY club, id DESC
             """)
 
     messages = cur.fetchall()
     conn.close()
 
-    return render_template("index.html", messages=messages, mode=mode, club_filter=club_filter)
+    return render_template("index.html", messages=messages, mode=mode)
 
 # ================= 登録 =================
 @app.route("/register", methods=["GET", "POST"])
@@ -198,18 +206,13 @@ def admin():
         SELECT id, name, body,
                datetime(posted, '+9 hours') AS posted_jst,
                ip, club
-        FROM messages
-        ORDER BY id DESC
+        FROM messages ORDER BY id DESC
     """)
     messages = cur.fetchall()
 
     conn.close()
     return render_template("admin.html", users=users, messages=messages)
 
-# ================= 起動 =================
-init_db()
-
+# ================= ローカル起動 =================
 if __name__ == "__main__":
-    print("DB PATH:", os.path.abspath(DB_NAME))
     app.run()
-
